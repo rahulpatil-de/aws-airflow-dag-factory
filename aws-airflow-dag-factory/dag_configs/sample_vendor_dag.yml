@@ -1,0 +1,77 @@
+dag_name: "vendor_daily_data_pipeline"
+description: "Vendor data ingestion and processing into the data lake"
+timezone: "US/Eastern"
+
+dag_config:
+  execution_timeout_minutes: 120
+  max_active_runs: 1
+  doc_md: |
+    ## Vendor Daily Data Pipeline
+    Executes job steps to load vendor data into staging and data warehouse layers.
+    Triggered manually or via schedule. Sends email notification on completion.
+
+default_args:
+  owner: "airflow"
+  depends_on_past: false
+  start_date: "2024-01-01"
+  email_on_failure: true
+  email_on_retry: false
+  retries: 0
+  retry_delay_minutes: 0
+  tags:
+    - data_engineering
+
+schedule_interval: null   # Set cron expression e.g. "0 6 * * *" for daily at 6 AM
+
+tasks:
+  - task_id: "start"
+    type: "empty"
+
+  # Step 1: Run Glue crawler to update the data catalog
+  - task_id: "crawler_refresh_catalog"
+    type: "call_crawler"
+    crawler_name: "your_glue_crawler_name"   # Replace with your actual Glue crawler name
+
+  # Step 2: Pre-processing job step (staging load)
+  - task_id: "js_load_pre_staging_data"
+    type: "job_step"
+    job_name: "PRE_STG_VENDOR_DATA"          # Job name registered in job_runner
+    verbose: 0
+
+  # Step 3: Post-processing job step (DW load)
+  - task_id: "js_load_post_dw_data"
+    type: "job_step"
+    job_name: "POST_DW_VENDOR_DATA"
+    verbose: 0
+
+  # Step 4: Load CSV staging data
+  - task_id: "js_load_stg_csv_data"
+    type: "job_step"
+    job_name: "PRE_STG_CSV_VENDOR_DATA"
+    verbose: 0
+
+  # Step 5: Send email notification (always runs, success or failure)
+  - task_id: "send_email_notification"
+    type: "final_email"
+    subject_prefix: "VENDOR DATA PIPELINE STATUS"
+    from_email: "data-pipeline-status@yourcompany.com"       # Replace with your sender email
+    success_recipients: "data-team@yourcompany.com"           # Replace with actual recipients
+    failure_recipients: "data-team@yourcompany.com"           # Replace with actual recipients
+    include_validation_results: false
+    custom_message: |
+      <p>Hi Team,</p>
+      <p>The Vendor Daily Data Pipeline has completed successfully.</p>
+      <p>Thank You!</p>
+    show_custom_only_on_success: true
+
+# -------------------------------------------------------
+# Dependencies — define execution order as a linear chain
+# or use nested lists for parallel branches (see docs/)
+# -------------------------------------------------------
+dependencies:
+  - start
+  - crawler_refresh_catalog
+  - js_load_pre_staging_data
+  - js_load_post_dw_data
+  - js_load_stg_csv_data
+  - send_email_notification
